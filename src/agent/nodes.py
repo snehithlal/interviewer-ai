@@ -212,7 +212,7 @@ def provide_interactive_feedback(state: InterviewState) -> Dict[str, Any]:
 
 def handle_candidate_question(state: InterviewState) -> Dict[str, Any]:
     """Node to handle candidate's questions"""
-    print("\n💬 Do you have any questions about the role, company, or the question I just asked?")
+    print("\n💬 Do you have any questions about the question I just asked?")
     print("(Type your question or press Enter to continue)")
 
     candidate_question = input("👤 You: ").strip()
