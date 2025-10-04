@@ -1,4 +1,4 @@
-# InterviewrAI 🎯
+# InterviewerAI 🎯
 
 An intelligent AI-powered technical interview system built with LangGraph and Python. The system conducts adaptive technical interviews, evaluates candidates in real-time, and generates comprehensive reports.
 
@@ -146,7 +146,7 @@ Solution: Check your MODEL_NAME in `.env` matches available models
 ## Example Output 📝
 
 ```
-🎯 INTERVIEWR AI - Technical Interview System
+🎯 INTERVIEWER AI - Technical Interview System
 ================================================================================
 
 Role: Python Developer
@@ -215,7 +215,7 @@ For issues or questions, please open an issue on GitHub.
 ## Project Structure 📁
 
 ```
-interviewr-ai/
+interviewer-ai/
 ├── src/
 │   ├── agent/
 │   │   ├── __init__.py
@@ -242,7 +242,7 @@ interviewr-ai/
 
 ```bash
 git clone <your-repo-url>
-cd interviewr-ai
+cd interviewer-ai
 ```
 
 2. **Create virtual environment**
