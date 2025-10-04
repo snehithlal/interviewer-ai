@@ -4,7 +4,10 @@ from src.utils.prompts import (
     EXPERIENCE_PROMPT,
     QUESTION_GENERATION_PROMPT,
     ANSWER_EVALUATION_PROMPT,
-    FOLLOWUP_PROMPT
+    FOLLOWUP_PROMPT,
+    FOLLOWUP_QUESTION_PROMPT,
+    CANDIDATE_QUESTION_PROMPT,
+    INTERACTIVE_FEEDBACK_PROMPT
 )
 from src.config.settings import settings
 
@@ -27,11 +30,18 @@ def ask_experience(state: InterviewState) -> Dict[str, Any]:
         "messages": state.get("messages", []) + [f"Interviewer: {message}"],
         "current_question_count": 0,
         "questions_asked": [],
+        "followup_questions": [],
+        "current_followup_count": 0,
+        "max_followups_per_question": 2,
+        "candidate_questions": [],
+        "candidate_question_answers": [],
         "correct_answers": 0,
         "wrong_answers": 0,
         "consecutive_wrong": 0,
         "should_continue": True,
-        "interview_complete": False
+        "interview_complete": False,
+        "waiting_for_candidate_question": False,
+        "current_phase": "main_question"
     }
 
 
@@ -91,6 +101,7 @@ def generate_question(state: InterviewState) -> Dict[str, Any]:
 
     return {
         "current_question": question,
+        "current_followup_count": 0,  # Reset follow-up count for new main question
         "messages": state["messages"] + [f"Interviewer: {question}"]
     }
 
@@ -157,13 +168,14 @@ def evaluate_answer(state: InterviewState) -> Dict[str, Any]:
     }
 
 
-def provide_feedback(state: InterviewState) -> Dict[str, Any]:
-    """Node to provide feedback on the answer"""
+def provide_interactive_feedback(state: InterviewState) -> Dict[str, Any]:
+    """Node to provide feedback and ask if candidate has questions"""
     llm = settings.get_llm()
 
     last_qa = state["questions_asked"][-1]
 
-    prompt = FOLLOWUP_PROMPT.format(
+    # Use the full interactive feedback
+    prompt = INTERACTIVE_FEEDBACK_PROMPT.format(
         question=last_qa.question,
         answer=last_qa.answer,
         evaluation=last_qa.evaluation,
@@ -178,8 +190,106 @@ def provide_feedback(state: InterviewState) -> Dict[str, Any]:
 
     print(f"\n🤖 Interviewer: {feedback}\n")
 
+    # Only ask for candidate questions on the first question or every 3 questions
+    should_ask_questions = (
+        state["current_question_count"] == 1 or
+        state["current_question_count"] % 3 == 0
+    )
+
+    if should_ask_questions:
+        return {
+            "messages": state["messages"] + [f"Interviewer: {feedback}"],
+            "waiting_for_candidate_question": True,
+            "current_phase": "candidate_question"
+        }
+    else:
+        return {
+            "messages": state["messages"] + [f"Interviewer: {feedback}"],
+            "waiting_for_candidate_question": False,
+            "current_phase": "main_question"
+        }
+
+
+def handle_candidate_question(state: InterviewState) -> Dict[str, Any]:
+    """Node to handle candidate's questions"""
+    print("\n💬 Do you have any questions about the role, company, or the question I just asked?")
+    print("(Type your question or press Enter to continue)")
+
+    candidate_question = input("👤 You: ").strip()
+
+    if not candidate_question:
+        # No question asked, continue with interview
+        return {
+            "waiting_for_candidate_question": False,
+            "current_phase": "main_question"
+        }
+
+    # Answer the candidate's question
+    llm = settings.get_llm()
+
+    prompt = CANDIDATE_QUESTION_PROMPT.format(
+        candidate_question=candidate_question,
+        role=state["role"],
+        languages=", ".join(state["languages"]),
+        level=state["level"],
+        experience_years=state.get("experience_years", 0)
+    )
+
+    response = llm.invoke(prompt)
+    answer = response.content.strip()
+
+    print(f"\n🤖 Interviewer: {answer}\n")
+
     return {
-        "messages": state["messages"] + [f"Interviewer: {feedback}"]
+        "candidate_questions": state["candidate_questions"] + [candidate_question],
+        "candidate_question_answers": state["candidate_question_answers"] + [answer],
+        "messages": state["messages"] + [f"Candidate: {candidate_question}", f"Interviewer: {answer}"],
+        "waiting_for_candidate_question": False,
+        "current_phase": "main_question"
+    }
+
+
+def generate_followup_question(state: InterviewState) -> Dict[str, Any]:
+    """Node to generate follow-up questions based on candidate's answer"""
+    llm = settings.get_llm()
+
+    last_qa = state["questions_asked"][-1]
+
+    # Check if we should ask a follow-up
+    should_ask_followup = (
+        state["current_followup_count"] < state["max_followups_per_question"] and
+        state["current_question_count"] < settings.MAX_QUESTIONS
+    )
+
+    if not should_ask_followup:
+        return {
+            "current_phase": "main_question",
+            "current_followup_count": 0,
+            "should_continue": True  # Ensure we continue to next main question
+        }
+
+    prompt = FOLLOWUP_QUESTION_PROMPT.format(
+        original_question=last_qa.question,
+        candidate_answer=last_qa.answer,
+        evaluation=last_qa.evaluation,
+        is_correct="Yes" if last_qa.is_correct else "No",
+        role=state["role"],
+        languages=", ".join(state["languages"]),
+        level=state["level"],
+        experience_years=state.get("experience_years", 0)
+    )
+
+    response = llm.invoke(prompt)
+    followup_question = response.content.strip()
+
+    print(f"\n🤖 Interviewer: {followup_question}\n")
+
+    return {
+        "current_question": followup_question,
+        "followup_questions": state["followup_questions"] + [followup_question],
+        "current_followup_count": state["current_followup_count"] + 1,
+        "current_phase": "followup",  # Keep as followup phase
+        "messages": state["messages"] + [f"Interviewer: {followup_question}"]
     }
 
 

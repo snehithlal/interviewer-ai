@@ -6,7 +6,9 @@ from src.agent.nodes import (
     generate_question,
     collect_answer,
     evaluate_answer,
-    provide_feedback,
+    provide_interactive_feedback,
+    handle_candidate_question,
+    generate_followup_question,
     check_continue
 )
 from src.utils.report_generator import generate_report
@@ -18,6 +20,25 @@ def should_continue_interview(state: InterviewState) -> str:
         return "continue"
     else:
         return "end"
+
+
+def determine_next_step(state: InterviewState) -> str:
+    """Determine the next step after feedback"""
+    if state.get("waiting_for_candidate_question", False):
+        return "candidate_question"
+    else:
+        return "check_continue"
+
+
+def should_ask_followup(state: InterviewState) -> str:
+    """Determine if we should ask a follow-up question"""
+    # Only ask follow-up if we're in followup phase and haven't exceeded limits
+    if (state.get("current_phase") == "followup" and
+        state.get("current_followup_count", 0) < state.get("max_followups_per_question", 2) and
+        state.get("current_question_count", 0) < 10):  # MAX_QUESTIONS
+        return "followup_question"
+    else:
+        return "check_continue"
 
 
 def create_interview_graph():
@@ -32,7 +53,9 @@ def create_interview_graph():
     workflow.add_node("generate_question", generate_question)
     workflow.add_node("collect_answer", collect_answer)
     workflow.add_node("evaluate_answer", evaluate_answer)
-    workflow.add_node("provide_feedback", provide_feedback)
+    workflow.add_node("provide_interactive_feedback", provide_interactive_feedback)
+    workflow.add_node("handle_candidate_question", handle_candidate_question)
+    workflow.add_node("generate_followup_question", generate_followup_question)
     workflow.add_node("check_continue", check_continue)
 
     # Define the flow
@@ -42,8 +65,20 @@ def create_interview_graph():
     workflow.add_edge("collect_experience", "generate_question")
     workflow.add_edge("generate_question", "collect_answer")
     workflow.add_edge("collect_answer", "evaluate_answer")
-    workflow.add_edge("evaluate_answer", "provide_feedback")
-    workflow.add_edge("provide_feedback", "check_continue")
+    workflow.add_edge("evaluate_answer", "provide_interactive_feedback")
+
+    # Conditional edge after feedback
+    workflow.add_conditional_edges(
+        "provide_interactive_feedback",
+        determine_next_step,
+        {
+            "candidate_question": "handle_candidate_question",
+            "check_continue": "check_continue"
+        }
+    )
+
+    # After candidate question handling - go directly to check continue
+    workflow.add_edge("handle_candidate_question", "check_continue")
 
     # Conditional edge based on continue decision
     workflow.add_conditional_edges(
@@ -83,11 +118,18 @@ def run_interview(role: str, languages: list, level: str):
         "questions_asked": [],
         "current_question": None,
         "current_answer": None,
+        "followup_questions": [],
+        "current_followup_count": 0,
+        "max_followups_per_question": 2,
+        "candidate_questions": [],
+        "candidate_question_answers": [],
         "correct_answers": 0,
         "wrong_answers": 0,
         "consecutive_wrong": 0,
         "should_continue": True,
         "interview_complete": False,
+        "waiting_for_candidate_question": False,
+        "current_phase": "main_question",
         "report": None,
         "messages": []
     }
@@ -96,16 +138,12 @@ def run_interview(role: str, languages: list, level: str):
     app = create_interview_graph()
 
     # Execute the interview
-    final_state = None
+    final_state = initial_state.copy()
     for output in app.stream(initial_state):
-        final_state = output
-
-    # Extract the actual state from the output
-    if final_state:
-        # The output is a dict with node names as keys
-        # Get the last state from the last node executed
-        state_key = list(final_state.keys())[-1]
-        final_state = final_state[state_key]
+        # Merge all state updates from each node
+        for node_name, node_output in output.items():
+            if isinstance(node_output, dict):
+                final_state.update(node_output)
 
     # Generate report
     print("\n" + "="*80)

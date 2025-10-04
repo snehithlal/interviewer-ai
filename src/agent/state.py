@@ -27,6 +27,15 @@ class InterviewState(TypedDict):
     current_question: Optional[str]
     current_answer: Optional[str]
 
+    # Follow-up questions
+    followup_questions: List[str]
+    current_followup_count: int
+    max_followups_per_question: int
+
+    # Candidate questions
+    candidate_questions: List[str]
+    candidate_question_answers: List[str]
+
     # Scoring
     correct_answers: int
     wrong_answers: int
@@ -35,6 +44,8 @@ class InterviewState(TypedDict):
     # Control flow
     should_continue: bool
     interview_complete: bool
+    waiting_for_candidate_question: bool
+    current_phase: str  # "main_question", "followup", "candidate_question"
 
     # Final report
     report: Optional[str]

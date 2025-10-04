@@ -26,6 +26,19 @@ Evaluation: {qa.evaluation}
 
     qa_text = "\n---\n".join(qa_details)
 
+    # Format candidate questions
+    candidate_questions_details = []
+    for i, (question, answer) in enumerate(zip(
+        state.get("candidate_questions", []),
+        state.get("candidate_question_answers", [])
+    ), 1):
+        candidate_questions_details.append(f"""
+Candidate Question {i}: {question}
+Interviewer Response: {answer}
+""")
+
+    candidate_questions_text = "\n---\n".join(candidate_questions_details) if candidate_questions_details else "No questions asked by candidate"
+
     # Generate report using LLM
     prompt = REPORT_GENERATION_PROMPT.format(
         role=state["role"],
@@ -36,7 +49,8 @@ Evaluation: {qa.evaluation}
         correct_answers=state["correct_answers"],
         wrong_answers=state["wrong_answers"],
         success_rate=round(success_rate, 2),
-        qa_details=qa_text
+        qa_details=qa_text,
+        candidate_questions_details=candidate_questions_text
     )
 
     response = llm.invoke(prompt)
